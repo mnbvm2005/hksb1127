@@ -15,7 +15,7 @@ from pandas import ExcelWriter
 import sys
 import subprocess
 import os
-
+import deepseek
 # 页面配置
 st.set_page_config(
     page_title="PMP系统",
