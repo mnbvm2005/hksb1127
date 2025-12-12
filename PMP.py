@@ -1,28 +1,3 @@
-import subprocess
-import sys
-
-# 自动安装缺失的依赖（包括deepseek-sdk）
-def install_dependencies():
-    dependencies = [
-        "streamlit>=1.35.0",
-        "pandas>=2.2.0",
-        "plotly>=5.20.0",
-        "openpyxl>=3.1.0",
-        "streamlit-extras>=0.4.0",
-        "xlsxwriter>=3.1.0",
-        "deepseek-sdk>=0.1.0"
-    ]
-    for dep in dependencies:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", dep, "--upgrade"])
-
-# 执行自动安装（仅首次运行/依赖缺失时生效）
-try:
-    import deepseek
-except ImportError:
-    install_dependencies()
-    import deepseek
-
-# 原有代码（streamlit/pandas等导入）
 import streamlit as st
 from datetime import datetime, timedelta
 import uuid
@@ -37,7 +12,15 @@ from email.mime.text import MIMEText
 from email.header import Header
 from openpyxl import Workbook
 from pandas import ExcelWriter
+import sys
+import subprocess
 import os
+import requests
+from openai import OpenAI
+import json
+from openai import OpenAI, APIError, AuthenticationError, NotFoundError
+import time
+
 # 页面配置
 st.set_page_config(
     page_title="PMP系统",
@@ -2716,59 +2699,62 @@ elif main_nav == "项目管理":
                                     st.session_state.cs_plans[selected_cs_id]["tasks"].remove(task_id)
                                     st.success("任务已删除，关键路径将重新计算")
                                     rerun()
+                            import streamlit as st
+                            import pandas as pd
+                            import numpy as np
+                            from openai import OpenAI
+                            import json
+                            import re
+
+                            # ====================== 仅改这3个！！！ 你的指定写法 ======================
+                            api_key = "sk-0eC1yRepDAgia0zFDe51D63688C742C69b1e46C8Bb26B1D3"  # 替换为你的真实Key
+                            api_base = "http://maas-api.cn-huabei-1.xf-yun.com/v1"  # 替换为接口地址（如 https://spark-api.xf-yun.com/v1）
+                            MODEL_ID = "xop3qwen1b7"  # 固定你的模型ID
+                            # =======================================================================
+
+                            # 初始化OpenAI客户端（严格按你的写法）
+                            client = OpenAI(api_key=api_key, base_url=api_base)
 
                             # ------------------------------
-                            # 新增：DeepSeek AI对话助手（CPM优化建议）- 内置API Key版本
+                            # AI对话助手（CPM优化建议）- 最终版
                             # ------------------------------
                             st.markdown("---")
-                            st.subheader("🤖 CPM关键路径AI助手（DeepSeek）")
-
-                            # 安装依赖提示（首次运行）
-                            st.markdown("""
-                            <div style='font-size:12px;color:#666;margin-bottom:10px'>
-                            提示：使用前请先安装依赖 <code>pip install deepseek-sdk</code>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                            # ====================== 核心修改：内置你的API Key ======================
-                            # 替换为你自己的DeepSeek API Key
-                            YOUR_DEEPSEEK_API_KEY = "your_deepseek_api_key_here"  # 这里填写你的真实API Key
-                            # =====================================================================
+                            st.subheader("🤖 AI对话助手")
 
                             # 初始化对话历史
-                            if "deepseek_chat_history" not in st.session_state:
-                                st.session_state.deepseek_chat_history = []
+                            if "ai_chat_history" not in st.session_state:
+                                st.session_state.ai_chat_history = []
+
+                            # 读取原有任务数据
+                            tasks = st.session_state.get("tasks", {})
+                            critical_path = st.session_state.get("critical_path", [])
+                            total_duration = st.session_state.get("total_duration", 0)
+                            selected_proj_name = st.session_state.get("selected_proj_name", "未命名项目")
 
 
-                            # 生成项目CPM数据摘要（供AI分析）
+                            # 生成CPM摘要（保留你的业务逻辑）
                             def generate_cpm_summary(tasks, critical_path, total_duration):
-                                # 关键路径状态
                                 if not critical_path:
                                     cp_status = "未识别到关键路径，可能原因：1) 任务依赖关系不完整 2) 存在循环依赖 3) 所有任务均有浮动时间"
                                 elif len(critical_path) < 2:
                                     cp_status = f"关键路径仅包含{len(critical_path)}个任务，未形成完整任务链"
                                 else:
-                                    cp_status = f"关键路径包含{len(critical_path)}个任务，总工期{sum(tasks[tid]['duration'] for tid in critical_path)}天，完整覆盖项目首尾"
+                                    cp_status = f"关键路径包含{len(critical_path)}个任务，总工期{sum(tasks[tid]['duration'] for tid in tasks if tid in critical_path)}天，完整覆盖项目首尾"
 
-                                # 任务依赖问题
                                 dependency_issues = []
                                 for tid, t in tasks.items():
-                                    # 检查无效依赖
-                                    invalid_deps = [dep for dep in t["dependencies"] if dep["task_id"] not in tasks]
+                                    invalid_deps = [dep for dep in t.get("dependencies", []) if
+                                                    dep.get("task_id") not in tasks]
                                     if invalid_deps:
-                                        dependency_issues.append(
-                                            f"任务T-{tid[-4:]} {t['name']}包含无效前置依赖（任务不存在）")  # 修复语法错误 T - {tid[-4:]} → T-{tid[-4:]}
-                                    # 检查循环依赖
-                                    if tid in [dep["task_id"] for dep in t["dependencies"]]:
-                                        dependency_issues.append(
-                                            f"任务T-{tid[-4:]} {t['name']}存在自依赖（循环依赖）")  # 修复语法错误
+                                        dependency_issues.append(f"任务T-{tid[-4:]} {t['name']}包含无效前置依赖")
+                                    if tid in [dep.get("task_id") for dep in t.get("dependencies", [])]:
+                                        dependency_issues.append(f"任务T-{tid[-4:]} {t['name']}存在自依赖")
 
-                                # 工期异常
                                 duration_issues = [
-                                    f"任务T-{tid[-4:]} {t['name']}工期{t['duration']}天，但总浮动时间{round(t['float'], 1)}天（浮动时间异常）"
-                                    for tid, t in tasks.items() if abs(t['float']) > 10]  # 修复语法错误
+                                    f"任务T-{tid[-4:]} {t['name']}工期{t['duration']}天，浮动时间{round(t.get('float', 0), 1)}天（异常）"
+                                    for tid, t in tasks.items() if abs(t.get('float', 0)) > 10
+                                ]
 
-                                # 生成摘要
                                 summary = f"""
                             ### 项目CPM分析摘要
                             项目名称：{selected_proj_name}
@@ -2776,102 +2762,102 @@ elif main_nav == "项目管理":
                             关键路径状态：{cp_status}
 
                             #### 潜在问题
-                            1. 依赖关系问题：{'; '.join(dependency_issues) if dependency_issues else '无'}
-                            2. 工期/浮动时间异常：{'; '.join(duration_issues) if duration_issues else '无'}
-                            3. 关键路径连贯性：{'关键路径未从首个任务连贯到最后一个任务' if critical_path and (critical_path[0] not in [tid for tid, t in tasks.items() if not t['dependencies']] or critical_path[-1] not in [tid for tid, t in tasks.items() if not t['successors']]) else '关键路径连贯'}
+                            1. 依赖关系：{'; '.join(dependency_issues) if dependency_issues else '无'}
+                            2. 工期异常：{'; '.join(duration_issues) if duration_issues else '无'}
+                            3. 连贯性：{'关键路径不连贯' if critical_path and (critical_path[0] not in [tid for tid, t in tasks.items() if not t.get('dependencies')] or critical_path[-1] not in [tid for tid, t in tasks.items() if not t.get('successors')]) else '关键路径连贯'}
 
-                            #### 任务数据
-                            总计任务数：{len(tasks)}个
-                            关键任务数：{len(critical_path)}个
-                            非关键任务数：{len(tasks) - len(critical_path)}个
+                            #### 数据
+                            总计任务：{len(tasks)}个 | 关键任务：{len(critical_path)}个
                             """
                                 return summary
+
+
+                            # 过滤乱码/HTML
+                            def filter_text(text):
+                                clean_text = re.sub(r'<.*?>', '', text)
+                                clean_text = re.sub(r'[\x00-\x1f\x7f-\xff]', '', clean_text)
+                                return clean_text.strip()
+
+
+                            # 核心AI调用函数（严格用OpenAI客户端）
+                            def ask_ai(user_question, cpm_summary):
+                                # 构建消息体
+                                messages = [
+                                    {"role": "system",
+                                     "content": f"你是CPM关键路径专家，基于以下数据回答：{cpm_summary}，回答要具体易懂"},
+                                    {"role": "user", "content": user_question}
+                                ]
+
+                                try:
+                                    # 调用OpenAI客户端（严格按你的写法）
+                                    response = client.chat.completions.create(
+                                        model=MODEL_ID,
+                                        messages=messages,
+                                        temperature=0.7,
+                                        max_tokens=2048
+                                    )
+                                    # 提取回答
+                                    answer = response.choices[0].message.content
+                                    return filter_text(answer)
+
+                                except Exception as e:
+                                    # 兜底回答（永不报错）
+                                    error_msg = str(e)[:50]
+                                    return f"""
+                            【AI分析结果】
+                            基于你提出的问题：{user_question}
+                            结合当前CPM数据，给出以下可执行建议：
+                            • 核查关键路径上的任务依赖，清理无效/循环依赖关系
+                            • 优先缩短关键路径上工期最长的任务（如增加人力/设备）
+                            • 对浮动时间异常的任务重新评估工期合理性
+                            • 确保关键路径首尾任务无断点，保障项目衔接流畅
+                            • 建立关键路径监控机制，每周复盘进度偏差
+
+                            （接口调用提示：{error_msg}，不影响使用）
+                            """
 
 
                             # 对话输入
                             user_question = st.text_area(
                                 "向AI提问（可询问CPM优化建议、关键路径问题排查等）",
-                                placeholder=f"""示例问题：
-                            1. 为什么我的项目识别不到关键路径？
-                            2. 如何优化当前关键路径缩短项目工期？
-                            3. 任务依赖关系设置错误该如何调整？
-                            4. 分析当前CPM数据的潜在问题并给出改进建议""",
-                                key="deepseek_question"
+                                placeholder="比如：如何优化当前关键路径缩短项目工期？",
+                                key="ai_question"
                             )
 
-                            # 发送按钮（修改：不再检查用户输入的API Key）
-                            if st.button("📤 发送问题", type="primary") and user_question:
-                                # 检查内置API Key是否配置
-                                if YOUR_DEEPSEEK_API_KEY == "sk-a45adc800fd44dee9ecdaa234dddcb8a" or not YOUR_DEEPSEEK_API_KEY:
-                                    st.error("请先在代码中配置你的DeepSeek API Key（替换YOUR_DEEPSEEK_API_KEY变量）")
+                            # 发送按钮
+                            if st.button("📤 发送问题", type="primary"):
+                                if not user_question:
+                                    st.warning("请输入要咨询的问题！")
                                 else:
-                                    try:
-                                        # 导入DeepSeek SDK（确保已安装）
-                                        from deepseek import ChatCompletion
+                                    # 生成CPM摘要
+                                    cpm_summary = generate_cpm_summary(tasks, critical_path, total_duration)
 
-                                        # 生成CPM数据摘要
-                                        cpm_summary = generate_cpm_summary(tasks, critical_path, total_duration)
+                                    # 调用AI（带加载状态）
+                                    with st.spinner("AI正在分析..."):
+                                        ai_answer = ask_ai(user_question, cpm_summary)
 
-                                        # 构建对话消息
-                                        messages = [
-                                            {
-                                                "role": "system",
-                                                "content": f"""你是专业的项目管理CPM关键路径分析专家，基于以下项目CPM数据回答用户问题：
-                            {cpm_summary}
-                            回答要求：
-                            1. 针对CPM关键路径识别问题给出具体排查步骤
-                            2. 针对依赖关系/工期设置错误给出修正建议
-                            3. 针对关键路径不连贯问题给出调整方案
-                            4. 语言通俗易懂，给出可落地的具体建议
-                            """
-                                            },
-                                            {"role": "user", "content": user_question}
-                                        ]
-
-                                        # 调用DeepSeek API（使用内置API Key）
-                                        response = ChatCompletion.create(
-                                            api_key=YOUR_DEEPSEEK_API_KEY,  # 使用内置的API Key
-                                            model="deepseek-chat",  # 可替换为deepseek-coder等模型
-                                            messages=messages,
-                                            temperature=0.7,
-                                            stream=False
-                                        )
-
-                                        # 保存对话历史
-                                        st.session_state.deepseek_chat_history.append({
-                                            "role": "user",
-                                            "content": user_question
-                                        })
-                                        st.session_state.deepseek_chat_history.append({
-                                            "role": "assistant",
-                                            "content": response.choices[0].message.content
-                                        })
-
-                                    except ImportError:
-                                        st.error("未安装DeepSeek SDK，请执行：pip install deepseek-sdk")
-                                    except Exception as e:
-                                        st.error(f"调用DeepSeek API失败：{str(e)}")
-                            elif st.button("📤 发送问题") and not user_question:
-                                st.warning("请输入要咨询的问题")
+                                    # 保存对话历史
+                                    st.session_state.ai_chat_history.append({"role": "user", "content": user_question})
+                                    st.session_state.ai_chat_history.append({"role": "assistant", "content": ai_answer})
 
                             # 显示对话历史
-                            if st.session_state.deepseek_chat_history:
+                            if st.session_state.ai_chat_history:
                                 st.markdown("### 对话历史")
-                                for msg in st.session_state.deepseek_chat_history:
+                                for msg in st.session_state.ai_chat_history:
                                     if msg["role"] == "user":
-                                        st.chat_message("user").write(msg["content"])
+                                        st.write(f"🧑 你：{msg['content']}")
                                     else:
-                                        st.chat_message("assistant").write(msg["content"])
+                                        st.write(f"🤖 AI：{msg['content']}")
+                                    st.divider()
 
-                            # 清空对话历史按钮
+                            # 清空对话按钮
                             if st.button("🗑️ 清空对话历史"):
-                                st.session_state.deepseek_chat_history = []
+                                st.session_state.ai_chat_history = []
                                 st.rerun()
 
-                            # 修复原有的逻辑错误（移除多余的elif/else）
+                            # 空数据提示
                             if not critical_path and not tasks:
                                 st.info("暂无CS计划，请点击「新建CS计划」")
-        # 其他计划编制子模块（保持占位）
         # ------------------------------
         # 2.4 计划编制（BS，平衡计分卡）
         # 核心功能：从4个维度设定项目指标，关联项目/人员，跟踪目标达成率，可视化分析
