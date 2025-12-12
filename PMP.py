@@ -1,3 +1,28 @@
+import subprocess
+import sys
+
+# 自动安装缺失的依赖（包括deepseek-sdk）
+def install_dependencies():
+    dependencies = [
+        "streamlit>=1.35.0",
+        "pandas>=2.2.0",
+        "plotly>=5.20.0",
+        "openpyxl>=3.1.0",
+        "streamlit-extras>=0.4.0",
+        "xlsxwriter>=3.1.0",
+        "deepseek-sdk>=0.1.0"
+    ]
+    for dep in dependencies:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", dep, "--upgrade"])
+
+# 执行自动安装（仅首次运行/依赖缺失时生效）
+try:
+    import deepseek
+except ImportError:
+    install_dependencies()
+    import deepseek
+
+# 原有代码（streamlit/pandas等导入）
 import streamlit as st
 from datetime import datetime, timedelta
 import uuid
@@ -12,10 +37,7 @@ from email.mime.text import MIMEText
 from email.header import Header
 from openpyxl import Workbook
 from pandas import ExcelWriter
-import sys
-import subprocess
 import os
-import deepseek
 # 页面配置
 st.set_page_config(
     page_title="PMP系统",
